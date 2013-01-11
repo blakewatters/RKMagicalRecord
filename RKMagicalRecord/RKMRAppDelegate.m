@@ -11,19 +11,30 @@
 #import "RKMRAppDelegate.h"
 #import "RKMRMasterViewController.h"
 
+// Use a class extension to expose access to MagicalRecord's private setter methods
+@interface NSManagedObjectContext ()
++ (void)MR_setRootSavingContext:(NSManagedObjectContext *)context;
++ (void)MR_setDefaultContext:(NSManagedObjectContext *)moc;
+@end
+
 @implementation RKMRAppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
-    // Setup MagicalRecord
-    [MagicalRecord setupCoreDataStackWithAutoMigratingSqliteStoreNamed:@"RKMagicalRecord.sqlite"];
-    
-    /**
-     Configure RestKit to share a Persistent Store Coordinator with MagicalRecord. This ensures that object request operations will persist back to the same Persistent Store managed by MagicalRecord, making managed objects available across the libraries.
-     */
-    NSPersistentStoreCoordinator *persistentStoreCoordinator = [NSPersistentStoreCoordinator MR_defaultStoreCoordinator];
-    RKManagedObjectStore *managedObjectStore = [[RKManagedObjectStore alloc] initWithPersistentStoreCoordinator:persistentStoreCoordinator];
+    // Configure RestKit's Core Data stack
+    NSURL *modelURL = [NSURL fileURLWithPath:[[NSBundle mainBundle] pathForResource:@"RKMagicalRecord" ofType:@"momd"]];
+    NSManagedObjectModel *managedObjectModel = [[[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL] mutableCopy];
+    RKManagedObjectStore *managedObjectStore = [[RKManagedObjectStore alloc] initWithManagedObjectModel:managedObjectModel];
+    NSString *storePath = [RKApplicationDataDirectory() stringByAppendingPathComponent:@"RKMagicalRecord.sqlite"];
+    NSError *error = nil;
+    [managedObjectStore addSQLitePersistentStoreAtPath:storePath fromSeedDatabaseAtPath:nil withConfiguration:nil options:nil error:&error];
     [managedObjectStore createManagedObjectContexts];
+    
+    // Configure MagicalRecord to use RestKit's Core Data stack
+    [NSPersistentStoreCoordinator MR_setDefaultStoreCoordinator:managedObjectStore.persistentStoreCoordinator];
+    [NSManagedObjectContext MR_setRootSavingContext:managedObjectStore.persistentStoreManagedObjectContext];
+    [NSManagedObjectContext MR_setDefaultContext:managedObjectStore.mainQueueManagedObjectContext];
+    
     
     RKObjectManager *objectManager = [RKObjectManager managerWithBaseURL:[NSURL URLWithString:@"http://restkit.org"]];
     objectManager.managedObjectStore = managedObjectStore;
